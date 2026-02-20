@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { AnimationState } from '@/lib/pixi'
 
+type VendorType = 'coffee' | 'pizza' | 'florist'
+
 export default function DekoDisplay() {
   const containerRef = useRef<HTMLDivElement>(null)
   const engineRef = useRef<any>(null)
@@ -10,15 +12,58 @@ export default function DekoDisplay() {
   const [currentState, setCurrentState] = useState<AnimationState>('IDLE')
   const [stateLabel, setStateLabel] = useState('')
   const [queueCount, setQueueCount] = useState(0)
+  const [vendorType, setVendorType] = useState<VendorType>('coffee')
+  const [shopName, setShopName] = useState('Deko')
+  const [websiteUrl, setWebsiteUrl] = useState('')
+  const [primaryColor, setPrimaryColor] = useState('#7C3AED')
   const orderCounter = useRef(0)
+  const configLoaded = useRef(false)
 
-  const initEngine = useCallback(async () => {
-    if (!containerRef.current || engineRef.current) return
+  // Load vendor config from Supabase
+  useEffect(() => {
+    if (configLoaded.current) return
+    configLoaded.current = true
+
+    // Check URL params first
+    const params = new URLSearchParams(window.location.search)
+    const urlVendor = params.get('vendor') as VendorType | null
+
+    fetch('/api/vendor')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && !data.error) {
+          setVendorType(urlVendor || data.vendor_type || 'coffee')
+          setShopName(data.shop_name || 'Deko')
+          setWebsiteUrl(data.website_url || '')
+          setPrimaryColor(data.primary_color || '#7C3AED')
+        } else if (urlVendor) {
+          setVendorType(urlVendor)
+        }
+      })
+      .catch(() => {
+        if (urlVendor) setVendorType(urlVendor)
+      })
+  }, [])
+
+  const initEngine = useCallback(async (vendor?: VendorType) => {
+    if (!containerRef.current) return
+    // Destroy existing engine
+    if (engineRef.current && 'destroy' in engineRef.current) {
+      engineRef.current.destroy()
+      engineRef.current = null
+    }
+    // Clear container
+    if (containerRef.current) {
+      containerRef.current.innerHTML = ''
+    }
+
     const { createDekoEngine } = await import('@/lib/pixi')
-    const { coffeeTemplate } = await import('@/lib/templates')
+    const { templates } = await import('@/lib/templates')
+    const template = templates[vendor || vendorType] || templates.coffee
+
     const engine = await createDekoEngine({
-      container: containerRef.current,
-      template: coffeeTemplate,
+      container: containerRef.current!,
+      template,
       onStateChange: (state, label) => {
         setCurrentState(state)
         setStateLabel(label)
@@ -26,7 +71,7 @@ export default function DekoDisplay() {
     })
     engineRef.current = engine as any
     setStarted(true)
-  }, [])
+  }, [vendorType])
 
   useEffect(() => {
     return () => {
@@ -36,24 +81,43 @@ export default function DekoDisplay() {
     }
   }, [])
 
+  // Listen for realtime orders from Supabase
+  useEffect(() => {
+    if (!started || !engineRef.current) return
+    let cleanup: (() => void) | undefined
+
+    import('@/lib/realtime').then(({ useOrderStreamDirect }) => {
+      cleanup = useOrderStreamDirect((order) => {
+        if (!engineRef.current) return
+        const engine = engineRef.current as any
+        engine.runOrder({
+          orderNumber: order.order_number,
+          items: Array.isArray(order.items) ? order.items : [],
+        })
+        setQueueCount((q) => Math.min(q + 1, 5))
+      })
+    }).catch(() => {})
+
+    return () => { cleanup?.() }
+  }, [started])
+
   const handleNewOrder = useCallback(() => {
     if (!engineRef.current) return
     const engine = engineRef.current as any
     orderCounter.current++
-    const items = [
-      ['Flat White', 'Croissant'],
-      ['Latte', 'Muffin'],
-      ['Espresso'],
-      ['Cappuccino', 'Scone'],
-      ['Mocha', 'Cookie'],
-    ]
+    const itemSets: Record<VendorType, string[][]> = {
+      coffee: [['Flat White', 'Croissant'], ['Latte', 'Muffin'], ['Espresso'], ['Cappuccino', 'Scone']],
+      pizza: [['Margherita'], ['Pepperoni', 'Garlic Bread'], ['Hawaiian'], ['BBQ Chicken', 'Fries']],
+      florist: [['Red Roses x12'], ['Mixed Bouquet'], ['Sunflowers', 'Baby Breath'], ['Tulips x6']],
+    }
+    const items = itemSets[vendorType] || itemSets.coffee
     const randomItems = items[Math.floor(Math.random() * items.length)]
     engine.runOrder({
       orderNumber: String(orderCounter.current).padStart(3, '0'),
       items: randomItems,
     })
     setQueueCount((q) => Math.min(q + 1, 5))
-  }, [])
+  }, [vendorType])
 
   // Track queue count based on state changes
   useEffect(() => {
@@ -66,24 +130,42 @@ export default function DekoDisplay() {
     return (
       <main className="min-h-screen bg-[#FAFAF9] flex flex-col items-center justify-center gap-8">
         <div className="text-center space-y-4">
-          <h1 className="text-7xl font-bold text-[#7C3AED]" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-            Deko
+          <h1 className="text-7xl font-bold" style={{ fontFamily: 'Space Grotesk, sans-serif', color: primaryColor }}>
+            {shopName || 'Deko'}
           </h1>
           <p className="text-xl text-gray-400" style={{ fontFamily: 'Inter, sans-serif' }}>
             Wait time? Show time.
           </p>
+          {/* Vendor indicator */}
+          <div className="flex justify-center gap-2 mt-4">
+            {(['coffee', 'pizza', 'florist'] as VendorType[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => setVendorType(v)}
+                className={`px-3 py-1 rounded-full text-sm transition-all ${
+                  vendorType === v
+                    ? 'bg-purple-100 text-[#7C3AED] font-medium'
+                    : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                }`}
+              >
+                {v === 'coffee' ? '☕' : v === 'pizza' ? '🍕' : '💐'} {v}
+              </button>
+            ))}
+          </div>
         </div>
         <button
           onClick={async () => {
-            await initEngine()
-            // Give a tick for engine to init, then send first order
+            await initEngine(vendorType)
             setTimeout(() => handleNewOrder(), 100)
           }}
-          className="px-10 py-4 bg-[#7C3AED] text-white rounded-full text-lg font-semibold hover:bg-[#6D28D9] transition-all hover:scale-105 shadow-lg shadow-purple-200"
-          style={{ fontFamily: 'Inter, sans-serif' }}
+          className="px-10 py-4 text-white rounded-full text-lg font-semibold transition-all hover:scale-105 shadow-lg"
+          style={{ fontFamily: 'Inter, sans-serif', backgroundColor: primaryColor }}
         >
           Start Demo
         </button>
+        <a href="/admin" className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
+          Admin Panel →
+        </a>
       </main>
     )
   }
@@ -92,12 +174,12 @@ export default function DekoDisplay() {
     <main className="min-h-screen bg-[#FAFAF9] flex flex-col">
       {/* Top bar */}
       <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100">
-        <h1 className="text-2xl font-bold text-[#7C3AED]" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-          Deko
+        <h1 className="text-2xl font-bold" style={{ fontFamily: 'Space Grotesk, sans-serif', color: primaryColor }}>
+          {shopName || 'Deko'}
         </h1>
         <div className="flex items-center gap-4">
           {currentState !== 'IDLE' && (
-            <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-[#7C3AED]">
+            <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-100" style={{ color: primaryColor }}>
               {stateLabel}
             </span>
           )}
@@ -108,7 +190,8 @@ export default function DekoDisplay() {
           )}
           <button
             onClick={handleNewOrder}
-            className="px-6 py-2 bg-[#7C3AED] text-white rounded-full text-sm font-semibold hover:bg-[#6D28D9] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-6 py-2 text-white rounded-full text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ backgroundColor: primaryColor }}
             disabled={queueCount >= 5}
           >
             + New Order
