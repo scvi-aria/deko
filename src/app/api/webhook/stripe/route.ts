@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
       })
 
       if (error) {
-        await logError(`Failed to insert order: ${error.message}`, null, { event_id: event.id })
+        await logError(`Failed to insert order: ${error.message}`, undefined, { event_id: event.id })
       }
     }
 
