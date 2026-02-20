@@ -126,79 +126,81 @@ export default function DekoDisplay() {
     }
   }, [currentState])
 
-  if (!started) {
-    return (
-      <main className="min-h-screen bg-[#FAFAF9] flex flex-col items-center justify-center gap-8">
-        <div className="text-center space-y-4">
-          <h1 className="text-7xl font-bold" style={{ fontFamily: 'Space Grotesk, sans-serif', color: primaryColor }}>
+  return (
+    <main className="min-h-screen bg-[#FAFAF9] flex flex-col relative">
+      {/* Landing overlay — shown when engine hasn't started */}
+      {!started && (
+        <div className="absolute inset-0 z-10 bg-[#FAFAF9] flex flex-col items-center justify-center gap-8">
+          <div className="text-center space-y-4">
+            <h1 className="text-7xl font-bold" style={{ fontFamily: 'Space Grotesk, sans-serif', color: primaryColor }}>
+              {shopName || 'Deko'}
+            </h1>
+            <p className="text-xl text-gray-400" style={{ fontFamily: 'Inter, sans-serif' }}>
+              Wait time? Show time.
+            </p>
+            {/* Vendor indicator */}
+            <div className="flex justify-center gap-2 mt-4">
+              {(['coffee', 'pizza', 'florist'] as VendorType[]).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setVendorType(v)}
+                  className={`px-3 py-1 rounded-full text-sm transition-all ${
+                    vendorType === v
+                      ? 'bg-purple-100 text-[#7C3AED] font-medium'
+                      : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                  }`}
+                >
+                  {v === 'coffee' ? '☕' : v === 'pizza' ? '🍕' : '💐'} {v}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              await initEngine(vendorType)
+              setTimeout(() => handleNewOrder(), 100)
+            }}
+            className="px-10 py-4 text-white rounded-full text-lg font-semibold transition-all hover:scale-105 shadow-lg"
+            style={{ fontFamily: 'Inter, sans-serif', backgroundColor: primaryColor }}
+          >
+            Start Demo
+          </button>
+          <a href="/admin" className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
+            Admin Panel →
+          </a>
+        </div>
+      )}
+
+      {/* Top bar — visible when engine is running */}
+      {started && (
+        <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100">
+          <h1 className="text-2xl font-bold" style={{ fontFamily: 'Space Grotesk, sans-serif', color: primaryColor }}>
             {shopName || 'Deko'}
           </h1>
-          <p className="text-xl text-gray-400" style={{ fontFamily: 'Inter, sans-serif' }}>
-            Wait time? Show time.
-          </p>
-          {/* Vendor indicator */}
-          <div className="flex justify-center gap-2 mt-4">
-            {(['coffee', 'pizza', 'florist'] as VendorType[]).map((v) => (
-              <button
-                key={v}
-                onClick={() => setVendorType(v)}
-                className={`px-3 py-1 rounded-full text-sm transition-all ${
-                  vendorType === v
-                    ? 'bg-purple-100 text-[#7C3AED] font-medium'
-                    : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                }`}
-              >
-                {v === 'coffee' ? '☕' : v === 'pizza' ? '🍕' : '💐'} {v}
-              </button>
-            ))}
+          <div className="flex items-center gap-4">
+            {currentState !== 'IDLE' && (
+              <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-100" style={{ color: primaryColor }}>
+                {stateLabel}
+              </span>
+            )}
+            {queueCount > 0 && (
+              <span className="text-sm text-gray-400">
+                Queue: {queueCount}
+              </span>
+            )}
+            <button
+              onClick={handleNewOrder}
+              className="px-6 py-2 text-white rounded-full text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ backgroundColor: primaryColor }}
+              disabled={queueCount >= 5}
+            >
+              + New Order
+            </button>
           </div>
         </div>
-        <button
-          onClick={async () => {
-            await initEngine(vendorType)
-            setTimeout(() => handleNewOrder(), 100)
-          }}
-          className="px-10 py-4 text-white rounded-full text-lg font-semibold transition-all hover:scale-105 shadow-lg"
-          style={{ fontFamily: 'Inter, sans-serif', backgroundColor: primaryColor }}
-        >
-          Start Demo
-        </button>
-        <a href="/admin" className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
-          Admin Panel →
-        </a>
-      </main>
-    )
-  }
+      )}
 
-  return (
-    <main className="min-h-screen bg-[#FAFAF9] flex flex-col">
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: 'Space Grotesk, sans-serif', color: primaryColor }}>
-          {shopName || 'Deko'}
-        </h1>
-        <div className="flex items-center gap-4">
-          {currentState !== 'IDLE' && (
-            <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-100" style={{ color: primaryColor }}>
-              {stateLabel}
-            </span>
-          )}
-          {queueCount > 0 && (
-            <span className="text-sm text-gray-400">
-              Queue: {queueCount}
-            </span>
-          )}
-          <button
-            onClick={handleNewOrder}
-            className="px-6 py-2 text-white rounded-full text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ backgroundColor: primaryColor }}
-            disabled={queueCount >= 5}
-          >
-            + New Order
-          </button>
-        </div>
-      </div>
-      {/* Canvas */}
+      {/* Canvas container — always mounted so the ref persists across state changes */}
       <div ref={containerRef} className="flex-1 flex items-center justify-center" />
     </main>
   )
